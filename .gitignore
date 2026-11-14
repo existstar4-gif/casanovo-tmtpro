@@ -1,0 +1,14 @@
+data/
+out/
+models/
+*.ckpt
+*.mzML
+*.mzml
+*.mgf
+*.raw
+*.lance
+*.mztab
+*.tsv
+*.npy
+*.fasta
+__pycache__/

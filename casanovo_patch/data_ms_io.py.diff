@@ -1,0 +1,40 @@
+--- a/casanovo/data/ms_io.py
++++ b/casanovo/data/ms_io.py
+@@ -187,11 +187,36 @@
+             self.metadata.append(
+                 (f"software[1]-setting[{i}]", f"{key} = {value}")
+             )
+-        for i, (key, value) in enumerate(config.items(), len(kwargs) + 1):
++        n_set = len(kwargs)
++        for i, (key, value) in enumerate(config.items(), n_set + 1):
+             if key not in ("residues",):
+                 self.metadata.append(
+                     (f"software[1]-setting[{i}]", f"{key} = {value}")
+                 )
++                n_set = i
++        # TMT fork 의 동작 스위치는 config 가 아니라 환경변수로 켜진다. 이것들이
++        # 기록되지 않으면 결과 파일만 보고 어떤 조건에서 나온 값인지 알 수 없다
++        # (재현 명세의 미해결 결함이었다). 실제 적용된 값을 그대로 남긴다.
++        import os as _os
++        for i, key in enumerate(
++            (
++                "CASANOVO_KNAPSACK",
++                "CASANOVO_KNAPSACK_PPM",
++                "CASANOVO_GATE",
++                "CASANOVO_GATE_RESCUE",
++                "CASANOVO_GATE_MINCH",
++                "CASANOVO_GATE_TOL",
++                "CASANOVO_TMT_MARGIN",
++                "CASANOVO_TMT_LAMBDA",
++            ),
++            n_set + 1,
++        ):
++            self.metadata.append(
++                (
++                    f"software[1]-setting[{i}]",
++                    f"{key} = {_os.environ.get(key, '(unset)')}",
++                )
++            )
+ 
+     def set_database(self, fasta_path: str) -> None:
+         """

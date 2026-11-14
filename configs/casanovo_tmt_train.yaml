@@ -1,0 +1,162 @@
+###
+# Casanovo-TMTpro fine-tuning config (casanovo 5.2.0).
+# Built from the full default template (all fields present, ASCII-only to avoid
+# Windows cp949 decode errors) + TMTpro/Phospho vocabulary extension.
+#
+# Base checkpoint : casanovo_orbitrap_v5-2-0.ckpt  (auto-downloaded to
+#                   %LOCALAPPDATA%\casanovo\ ; pass with `--model orbitrap`)
+# Vocab extension : 7 new tokens added on top of the base 28-token alphabet;
+#                   0 base tokens dropped (Deamidated / N-term mods kept).
+# Run (PowerShell, set UTF-8 first):
+#   $env:PYTHONUTF8=1
+#   casanovo train -c configs/casanovo_tmt_train.yaml -m orbitrap `
+#     -p "<val mgfs>" "<train mgfs>"
+#   Mixed retrain: pass BOTH TMT and naked train/val globs to -p (TMT+naked discrimination).
+###
+
+# --- inference / fine-tuning shared ---
+min_peptide_len: 6
+max_peptide_len: 100
+predict_batch_size: 256      # v11: 1024 -> 256 after a CUDA OOM on 2026-08-07.
+                             # model_runner.py sets eval_batch_size = predict_batch_size,
+                             # so VALIDATION was running at batch 1024 while training ran
+                             # at 64 -- a 16x larger activation footprint. It survived 65
+                             # periodic validations, then died at the epoch-0 boundary
+                             # where end-of-epoch validation overlaps checkpoint writing.
+                             # Windows cannot use PYTORCH_CUDA_ALLOC_CONF=expandable_segments
+                             # ("not supported on this platform" in the log), so fragmentation
+                             # is never reclaimed across a long run and the big contiguous
+                             # validation allocation is what finally fails. 256 keeps a wide
+                             # margin on the 16 GB card; validation is a small share of
+                             # wall-clock so the slowdown is negligible.
+top_match: 1
+accelerator: "gpu"          # CUDA verified (RTX 5070 Ti, torch 2.11.0+cu128)
+devices:                    # auto-select
+
+# --- de novo ---
+n_beams: 1
+
+# --- database search (unused for de novo training) ---
+precursor_mass_tol: 50
+isotope_error_range: [0, 1]
+enzyme: "trypsin"
+digestion: "full"
+missed_cleavages: 0
+max_mods: 1
+allowed_fixed_mods: "C:C[Carbamidomethyl]"
+allowed_var_mods: "M:M[Oxidation],N:N[Deamidated],Q:Q[Deamidated],nterm:[Acetyl]-,nterm:[Carbamyl]-,nterm:[Ammonia-loss]-,nterm:[+25.980265]-"
+
+# --- training-from-scratch params (most irrelevant when fine-tuning) ---
+random_seed: 454
+n_log: 1
+tb_summarywriter: false
+log_metrics: false
+log_every_n_steps: 50
+lance_dir: "data/lance"         # training corpus as a Lance table; rows interleaved by
+                                 # scripts/shuffle_train_lance.py so that label-free and TMT
+                                 # spectra are mixed throughout each epoch.
+val_check_interval: 5000     # data is large -> validate often (default 50_000)
+
+# spectrum processing
+min_peaks: 20
+max_peaks: 150
+min_mz: 50.0
+max_mz: 2500.0
+min_intensity: 0.01
+remove_precursor_tol: 2.0
+max_charge: 4                # MUST match base ckpt charge embedding (4); the
+                             # loader drops z>=5 (~2.55% of corpus: z5 2.38%, z6 0.17%).
+                             # config>4 -> CUDA index-out-of-bounds in charge embedding.
+
+# model architecture (MUST match base ckpt; v5_0_0 = dim512 / 9 layers)
+dim_model: 512
+n_head: 8
+dim_feedforward: 1024
+n_layers: 9
+dropout: 0.0
+dim_intensity:
+warmup_iters: 10000          # shorter than 100_000 for fine-tuning
+cosine_schedule_period_iters: 3310000   # v11: RECOMPUTED for the expanded corpus. 21,181,836/64 = 330,966
+                                        # steps/epoch x 10 epochs = 3,309,660 -> 3.31M.
+                                        # v10 carried 2.74M, sized for the OLD 17.5M corpus; reusing it here
+                                        # would end the cosine ~570k steps early and leave the tail grinding
+                                        # at min-LR. VERIFY against the ingestion line
+                                        # "Training dataset contains X spectra" and restart early if X differs
+                                        # materially from 21.18M.
+learning_rate: 1.5e-4        # 8ep: lowered from 2e-4 to reduce val spikes at batch64
+weight_decay: 1.0e-5
+train_label_smoothing: 0.01
+
+# training / inference
+train_batch_size: 64         # b64: dropped to 64 after GPU OOM at batch128 (4th crash)
+                             # peak ~3GB, survives desktop-app GPU spikes. overnight run.
+max_epochs: 10               # v11: v7 recipe (all TMT + diverse naked x1) on the EXPANDED corpus.
+                             # base-start, margin ON, no naked upsampling (that diverged 3x: v8/v8b/v9).
+                             # Measured 5,000 steps ~ 22.4 min -> 3.31M steps ~ 10.3 days of clean run.
+shuffle: true
+shuffle_buffer_size: 5000    # b64: halved 10000->5000 to lower training-phase RAM
+num_sanity_val_steps: 0
+calculate_precision: false
+accumulate_grad_batches: 1
+gradient_clip_val: 1.0
+gradient_clip_algorithm: "norm"
+precision: "bf16-mixed"      # ~2x faster + half memory on Blackwell Tensor Cores
+                             # (bf16 numerically stable, unlike fp16). was 32-true.
+
+replace_isoleucine_with_leucine: true   # consistent with our I->L split hashing
+massivekb_tokenizer: false
+
+# --- AMINO ACID AND MODIFICATION VOCABULARY ---
+# Masses match the base checkpoint for shared tokens (note T = 101.047670 as in
+# the released model, not 101.047679) so the shared decoder rows align exactly.
+residues:
+  "G": 57.021464
+  "A": 71.037114
+  "S": 87.032028
+  "P": 97.052764
+  "V": 99.068414
+  "T": 101.047670
+  "C[Carbamidomethyl]": 160.030649
+  "L": 113.084064
+  "I": 113.084064
+  "N": 114.042927
+  "D": 115.026943
+  "Q": 128.058578
+  "K": 128.094963
+  "E": 129.042593
+  "M": 131.040485
+  "H": 137.058912
+  "F": 147.068414
+  "R": 156.101111
+  "Y": 163.063329
+  "W": 186.079313
+  # base amino-acid modifications (kept from checkpoint)
+  "M[Oxidation]": 147.035400
+  "N[Deamidated]": 115.026943
+  "Q[Deamidated]": 129.042594
+  # base N-terminal modifications (kept from checkpoint)
+  "[Acetyl]-": 42.010565
+  "[Carbamyl]-": 43.005814
+  "[Ammonia-loss]-": -17.026549
+  "[+25.980265]-": 25.980265
+  # === NEW: phosphorylation (de novo TMT corpus) ===
+  "S[Phospho]": 166.998359          # 87.032028 + 79.966331
+  "T[Phospho]": 181.014001          # 101.047670 + 79.966331
+  "Y[Phospho]": 243.029660          # 163.063329 + 79.966331
+  # === NEW: TMTpro 16-plex (+304.207146) ===
+  "K[TMTpro]": 432.302109           # 128.094963 + 304.207146
+  "[TMTpro]-": 304.207146           # all peptide N-termini
+  # === NEW: rare phospho artifacts (kept to avoid tokenizer crash; consider removing) ===
+  "R[Phospho]": 236.067442
+  "K[Phospho]": 208.061294
+
+# Initialize each NEW token's decoder rows from a chemically-closest existing
+# token in the checkpoint (verified by scripts/inspect_vocab.py: 7 new, 0 dropped).
+new_token_init:
+  "S[Phospho]": "S"
+  "T[Phospho]": "T"
+  "Y[Phospho]": "Y"
+  "K[TMTpro]": "K"
+  "[TMTpro]-": "[Acetyl]-"
+  "R[Phospho]": "R"
+  "K[Phospho]": "K"

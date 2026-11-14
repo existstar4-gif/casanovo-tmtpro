@@ -1,0 +1,18 @@
+--- a/casanovo/denovo/model_runner.py
++++ b/casanovo/denovo/model_runner.py
+@@ -104,6 +104,15 @@
+                 dirpath=output_dir,
+                 monitor="valid_CELoss",
+                 filename=best_filename,
++                enable_version_counter=False,
++            ),
++            # PATCH (crash-resilient resume): rolling "last" checkpoint every N steps,
++            # regardless of val, so a crash loses at most ~N steps of progress on resume.
++            ModelCheckpoint(
++                dirpath=output_dir,
++                every_n_train_steps=20000,
++                save_top_k=1,
++                filename=prefix + "last",
+                 enable_version_counter=False,
+             ),
+         ]

@@ -1,0 +1,335 @@
+--- a/casanovo/denovo/model.py
++++ b/casanovo/denovo/model.py
+@@ -4,6 +4,8 @@
+ import heapq
+ import itertools
+ import logging
++import os
++import re
+ import warnings
+ from typing import Any, Dict, Generator, Iterable, List, Optional, Tuple, Union
+ 
+@@ -21,6 +23,99 @@
+ from . import evaluate
+ 
+ logger = logging.getLogger("casanovo")
++
++# --- N-terminal TMT margin loss (env-gated; INERT unless CASANOVO_TMT_MARGIN>0) ---
++# Casanovo decodes C->N (reverse), so the N-term [TMTpro]- token is emitted last,
++# right before EOS, where it loses the terminal competition to EOS (=> 0% emission).
++# This auxiliary loss, applied ONLY at positions whose target IS the N-term TMT token,
++# pushes  logit([TMTpro]-) - logit(EOS) >= margin. Naked peptides (no N-term TMT) are
++# untouched. Disabled by default (margin=0) -> no behavior change for stock runs.
++# Enable at train launch, e.g.:  $env:CASANOVO_TMT_MARGIN=5 ; $env:CASANOVO_TMT_LAMBDA=1.0
++_TMT_MARGIN = float(os.environ.get("CASANOVO_TMT_MARGIN", "0"))      # 0 => disabled
++_TMT_LAMBDA = float(os.environ.get("CASANOVO_TMT_LAMBDA", "1.0"))    # weight of aux term
++_TMT_NTERM_TOKEN = os.environ.get("CASANOVO_TMT_NTERM_TOKEN", "[TMTpro]-")
++if _TMT_MARGIN > 0:
++    logger.info(
++        "N-term TMT margin loss ENABLED: token=%s margin=%.2f lambda=%.2f",
++        _TMT_NTERM_TOKEN, _TMT_MARGIN, _TMT_LAMBDA,
++    )
++
++# --- Knapsack (precursor-mass-constrained) decoding (env-gated; INERT unless CASANOVO_KNAPSACK=1) ---
++# Stock casanovo picks the top beam by SCORE only (no precursor-mass check), so wrong-mass
++# predictions get emitted even when a mass-consistent candidate exists in the beam cache.
++# When enabled, _get_top_peptide RE-RANKS: among cached beams it prefers the highest-score
++# candidate whose neutral mass matches the precursor (within CASANOVO_KNAPSACK_PPM ppm, allowing
++# 0..1 C13 isotope offsets); falls back to top-score if none match. No retraining; precision up
++# with NO coverage loss (promotes the correct-mass candidate instead of dropping predictions).
++_KNAPSACK = os.environ.get("CASANOVO_KNAPSACK", "0") == "1"
++_KNAPSACK_PPM = float(os.environ.get("CASANOVO_KNAPSACK_PPM", "20"))
++# 질량이 맞는 후보에 얹는 점수. 기본 inf = 경성: 질량이 맞는 후보가 언제나 앞에 선다.
++# 유한값이면 DB 보너스와 같은 축에서 더해져, 모델이 충분히 확신하면 질량이 어긋난 후보도
++# 이길 수 있다. 재순위 격자(2026-09-11)가 두 보너스를 함께 쓸기 위해 둔 손잡이다.
++_KNAPSACK_BONUS = float(os.environ.get("CASANOVO_KNAPSACK_BONUS", "inf"))
++_H2O = 18.0105646863
++_C13 = 1.0033548378
++if _KNAPSACK:
++    logger.info("Knapsack mass-constrained decoding ENABLED: tol=%.1f ppm, bonus %s",
++                _KNAPSACK_PPM, "hard" if _KNAPSACK_BONUS == float("inf") else "%.3f" % _KNAPSACK_BONUS)
++
++# --- Tryptic-space re-ranking (env-gated; INERT unless CASANOVO_DBRANK=1) ---
++# 전구체 질량 제약과 같은 자리에서, 후보가 참조 프로테옴의 트립신 공간에 있는지로 한 번 더
++# 가른다. 버리지 않고 앞뒤로만 옮기므로 커버리지는 변하지 않는다(knapsack 과 동일한 성질).
++# 인덱스는 build_tryptic_index.py 가 구운 uint64 blake2b 다이제스트 정렬 배열이다
++# (사람 2.5M = 19 MB). 문자열 집합 대신 쓰는 이유는 이 환경의 RAM 여유가 작기 때문이다.
++_DBRANK = os.environ.get("CASANOVO_DBRANK", "0") == "1"
++_DBRANK_NPY = os.environ.get("CASANOVO_DBRANK_INDEX", "")
++# 데이터베이스에 있는 후보에 얹는 점수. 모델 점수가 0..1 이다.
++# 기본 1.00 은 2026-09-11 질량 보너스 × DB 보너스 격자로 정했다(FACTS_final.md §15-6).
++# 질량 경성(KNAPSACK_BONUS=inf)과 함께 쓸 때, knapsack 만 대비:
++#   외부 6종 67.2 → 71.5%, 내부 78.8 → 88.3%, DB 밖 정답 69.5 → 68.6% (456 중 4건)
++# 선택 규칙은 격자를 보기 전에 고정했고, 외부 하나씩 빼고 골라도 4/6 이 같은 값이었다.
++# 모델로 돌린 예측이 오프라인 계산과 3개 데이터 전부 100% 일치.
++# ⚠️ 옛 기본 0.40(2026-09-10)은 무효 — 당시 코드가 knapsack 순서를 지운 상태에서 쓸었다(§15-2).
++_DBRANK_BONUS = float(os.environ.get("CASANOVO_DBRANK_BONUS", "1.00"))
++_DBRANK_IDX = None
++if _DBRANK:
++    import hashlib as _hl
++    import numpy as _np
++    _DBRANK_IDX = _np.load(_DBRANK_NPY)
++    logger.info("Tryptic-space re-ranking ENABLED: %s (%d peptides, bonus %.3f)",
++                _DBRANK_NPY, len(_DBRANK_IDX), _DBRANK_BONUS)
++
++
++def _bare(seq: str) -> str:
++    """수식·하이픈을 벗기고 대문자 + I->L. mixed_split.py::split_of 와 같은 정규화."""
++    return re.sub(r"\[[^\]]*\]", "", seq).replace("-", "").strip().upper().replace("I", "L")
++
++
++def _in_tryptic(seq: str) -> bool:
++    if _DBRANK_IDX is None:
++        return False
++    h = int.from_bytes(_hl.blake2b(_bare(seq).encode(), digest_size=8).digest(), "big")
++    i = _np.searchsorted(_DBRANK_IDX, _np.uint64(h))
++    return bool(i < len(_DBRANK_IDX) and _DBRANK_IDX[i] == h)
++
++
++# --- TMT/naked reporter-ion GATE (env-gated; INERT unless CASANOVO_GATE=1) ---
++# Stage-1: classify each spectrum TMT vs naked by counting how many TMTpro reporter
++# channels (126-135 m/z) are present. Stage-2: for naked-classified spectra, demote
++# any candidate that emits a TMTpro token (N-term [TMTpro]- or K[TMTpro]) so a non-TMT
++# sequence wins -> naked false-TMT emission (오탐) -> ~0 by construction. Decouples
++# TMT/naked discrimination from the sequence model (no naked-heavy training needed).
++_GATE = os.environ.get("CASANOVO_GATE", "0") == "1"
++_GATE_MINCH = int(os.environ.get("CASANOVO_GATE_MINCH", "3"))     # >=this many channels -> TMT
++_GATE_TOL = float(os.environ.get("CASANOVO_GATE_TOL", "0.01"))    # +-Da match tolerance
++# 구조 모드: 리포터가 검출된(=TMT 로 분류된) 스펙트럼에서 TMT 후보를 승격시킨다.
++# _GATE 와 독립적으로 켜고 끌 수 있다. 기본은 비활성.
++_GATE_RESCUE = os.environ.get("CASANOVO_GATE_RESCUE", "0") == "1"
++_TMTPRO_REPORTERS = [
++    126.127726, 127.124761, 127.131081, 128.128116, 128.134436,
++    129.131471, 129.137790, 130.134825, 130.141145, 131.138180,
++    131.144500, 132.141535, 132.147855, 133.144890, 133.151210,
++    134.148245, 134.154565, 135.151600,
++]
++if _GATE:
++    logger.info("TMT/naked reporter-ion GATE ENABLED: min_channels=%d tol=%.3f Da", _GATE_MINCH, _GATE_TOL)
+ 
+ 
+ class Spec2Pep(pl.LightningModule):
+@@ -310,6 +405,24 @@
+         tokens[:, 0, :] = top_indices
+         scores[:, :1, :, :] = einops.repeat(pred, "B L V -> B L V S", S=beam)
+ 
++        # KNAPSACK: keep the per-spectrum precursor neutral mass for mass-aware selection.
++        self._precursor_masses = precursors[:, 0].detach().clone()
++
++        # GATE: classify each spectrum TMT vs naked by counting TMTpro reporter channels
++        # present in its peaks (zero-padding never matches the 126-135 m/z channels).
++        if _GATE:
++            try:
++                ch = torch.tensor(
++                    _TMTPRO_REPORTERS, device=mzs.device, dtype=mzs.dtype
++                )
++                d = (mzs.unsqueeze(-1) - ch.view(1, 1, -1)).abs()  # (B, P, C)
++                matched = (d <= _GATE_TOL).any(dim=1)              # (B, C)
++                self._is_naked = (
++                    matched.sum(dim=1) < _GATE_MINCH
++                ).detach().clone()
++            except Exception:
++                self._is_naked = None
++
+         # Make all tensors the right shape for decoding.
+         precursors = einops.repeat(precursors, "B L -> (B S) L", S=beam)
+         mem_masks = einops.repeat(mem_masks, "B L -> (B S) L", S=beam)
+@@ -373,7 +486,7 @@
+                 )
+         finally:
+             # Ensure temporary attributes are cleaned up in all cases to prevent memory leaks
+-            temp_attrs = ["_batch_size", "_beam_size"]
++            temp_attrs = ["_batch_size", "_beam_size"]  # NOT _precursor_masses: _get_top_peptide (after finally) needs it; it's overwritten each call
+             for attr in temp_attrs:
+                 if hasattr(self, attr):
+                     delattr(self, attr)
+@@ -452,8 +565,12 @@
+                 # This will fail to catch internal modifications in some cases
+                 # where there are multiple mods, but these are already discarded
+                 # by the previous check.
++                # FIX: reverse decoding emits the N-term mod LAST (at final_pos),
++                # forward emits it at position 0. The stock 5.2.0 code had this
++                # inverted, discarding ALL N-term-modified beams in reverse mode
++                # (=> 0% N-term mods ever output). See scripts/patches/.
+                 n_terminal_pos = (
+-                    0 if self.tokenizer.reverse else final_pos[has_n_term]
++                    final_pos[has_n_term] if self.tokenizer.reverse else 0
+                 )
+                 internal_mods = ~token_is_nterm[has_n_term, n_terminal_pos]
+ 
+@@ -676,6 +793,18 @@
+ 
+         return tokens_out, scores_out
+ 
++    def _gate_tmt_ids(self):
++        """Cached tensor of token ids that carry a TMTpro tag (N-term + K)."""
++        ids = getattr(self, "_gate_tmt_ids_cache", None)
++        if ids is None:
++            wanted = ("[TMTpro]-", "K[TMTpro]")
++            idx = self.tokenizer.index
++            ids = torch.tensor(
++                [idx[r] for r in wanted if r in idx], dtype=torch.int64
++            )
++            self._gate_tmt_ids_cache = ids
++        return ids
++
+     def _get_top_peptide(
+         self,
+         pred_cache: Dict[
+@@ -704,8 +833,97 @@
+             score, the amino acid scores, and the predicted peptide
+             sequence.
+         """
+-        for peptides in pred_cache.values():
++        for spec_idx, peptides in pred_cache.items():
+             if len(peptides) > 0:
++                # All cached beams ranked by peptide score (descending).
++                ranked = heapq.nlargest(len(peptides), peptides)
++                # KNAPSACK + DBRANK: one sort over two incentives.
++                #
++                #   key = score + KNAPSACK_BONUS * mass_ok + DBRANK_BONUS * in_db
++                #
++                # mass_ok: the candidate's neutral mass matches the precursor within
++                # tol, allowing 0..1 C13. in_db: the candidate lies in the tryptic space
++                # of the reference proteome. KNAPSACK_BONUS = inf (the default) is the
++                # hard rule — every mass-consistent candidate stands ahead, and the DB
++                # bonus only reorders candidates inside each mass group.
++                #
++                # ⚠️ Until 2026-09-11 the two stages ran one after the other and the
++                # DB stage re-sorted every candidate on score + bonus, which erased the
++                # knapsack order: DB bonus 0 with knapsack on gave exactly the
++                # predictions of no re-ranking (3,965 of 3,965). Sorting once on a key
++                # that holds both terms is what keeps the mass rule in force.
++                use_mass = _KNAPSACK and getattr(self, "_precursor_masses", None) is not None
++                use_db = _DBRANK and _DBRANK_IDX is not None
++                if use_mass or use_db:
++                    try:
++                        prec = float(self._precursor_masses[spec_idx].item()) if use_mass else 0.0
++                        keyed = []
++                        n_ok = 0
++                        for entry in ranked:
++                            ok = False
++                            if use_mass:
++                                mass = float(
++                                    self.tokenizer.masses[entry[3]].sum().item()
++                                ) + _H2O
++                                ok = prec > 0 and (
++                                    abs(mass - prec) / prec * 1e6 <= _KNAPSACK_PPM
++                                    or abs(mass - (prec - _C13)) / prec * 1e6 <= _KNAPSACK_PPM
++                                )
++                                n_ok += ok
++                            inc = entry[0]
++                            if use_db:
++                                sq = self.tokenizer.detokenize(
++                                    torch.unsqueeze(entry[3], 0)
++                                )[0]
++                                if _in_tryptic(sq):
++                                    inc += _DBRANK_BONUS
++                            if use_mass and _KNAPSACK_BONUS != float("inf") and ok:
++                                inc += _KNAPSACK_BONUS
++                            hard = use_mass and _KNAPSACK_BONUS == float("inf")
++                            keyed.append(((ok if hard else False, inc), entry))
++                        if os.environ.get("CASANOVO_KNAPSACK_DEBUG") and not getattr(self, "_kdbg", False):
++                            self._kdbg = True
++                            import sys
++                            _mm = [round(float(self.tokenizer.masses[e[3]].sum().item()) + _H2O, 3) for e in ranked[:3]]
++                            print(f"[KNAP] spec{spec_idx} prec={prec:.3f} top3mass={_mm} consistent={n_ok}/{len(ranked)}", file=sys.stderr, flush=True)
++                        # 안정 정렬: 키가 같으면 모델 점수 순서가 남는다
++                        keyed.sort(key=lambda x: x[0], reverse=True)
++                        ranked = [e for _k, e in keyed]
++                    except Exception as _e:
++                        import sys
++                        print("[RERANK ERR]", repr(_e), file=sys.stderr, flush=True)
++                # GATE: for naked-classified spectra, demote candidates emitting any
++                # TMTpro token so a non-TMT sequence wins (오탐 -> ~0). Preserves the
++                # knapsack order within each group (non-TMT candidates stay mass-ranked).
++                if (_GATE or _GATE_RESCUE) and getattr(self, "_is_naked", None) is not None:
++                    try:
++                        is_naked = bool(self._is_naked[spec_idx].item())
++                        tmt_ids = self._gate_tmt_ids()
++                        # 두 방향은 목적이 다르므로 따로 켠다.
++                        #   _GATE        naked 로 분류 -> TMT 후보 강등 (오탐 억제)
++                        #   _GATE_RESCUE TMT 로 분류  -> TMT 후보 승격 (구조)
++                        # 구조 방향의 동기: naked 펩타이드와 TMT 펩타이드가 우연히
++                        # 공동분리되고 naked 신호가 더 강하면, 전구체는 TMT 인데도
++                        # 단편은 naked 가 지배해 무표지 서열이 이길 수 있다. 리포터
++                        # 이온은 "이 창 안에 TMT 펩타이드가 있다"는 독립 증거이므로,
++                        # 그때는 TMT 해석을 우선시켜 TMT 펩타이드를 살린다.
++                        apply = (_GATE and is_naked) or (_GATE_RESCUE and not is_naked)
++                        if apply and tmt_ids.numel():
++                            no_tmt, has_tmt = [], []
++                            for entry in ranked:
++                                toks = entry[3]
++                                has = bool(
++                                    torch.isin(
++                                        toks, tmt_ids.to(toks.device)
++                                    ).any().item()
++                                )
++                                (has_tmt if has else no_tmt).append(entry)
++                            ranked = (
++                                (has_tmt + no_tmt) if (_GATE_RESCUE and not is_naked)
++                                else (no_tmt + has_tmt)
++                            )
++                    except Exception:
++                        pass
+                 yield [
+                     (
+                         pep_score,
+@@ -718,9 +936,9 @@
+                             torch.unsqueeze(pred_tokens, 0)
+                         )[0],
+                     )
+-                    for pep_score, _, aa_scores, pred_tokens in heapq.nlargest(
+-                        self.top_match, peptides
+-                    )
++                    for pep_score, _, aa_scores, pred_tokens in ranked[
++                        : self.top_match
++                    ]
+                 ]
+             else:
+                 yield []
+@@ -799,6 +1017,33 @@
+         )
+         return scores, tokens
+ 
++    def _nterm_tmt_margin_loss(self, pred, truth_flat):
++        """Auxiliary margin loss for the terminal N-term TMT vs EOS competition.
++
++        At positions whose target is the N-term TMT token, push
++        ``logit([TMTpro]-) - logit(EOS) >= margin`` (hinge). Applied only where the
++        target IS the N-term TMT token, so naked peptides are unaffected. Returns a
++        zero scalar when disabled (margin<=0), the token is absent from the vocab,
++        or no such positions are in the batch.
++
++        Parameters
++        ----------
++        pred : torch.Tensor of shape (N, vocab_size)
++            Flattened per-position logits (same tensor passed to celoss).
++        truth_flat : torch.Tensor of shape (N,)
++            Flattened target token ids (aligned with ``pred`` rows).
++        """
++        if _TMT_MARGIN <= 0:
++            return pred.new_zeros(())
++        tmt_idx = self.tokenizer.index.get(_TMT_NTERM_TOKEN)
++        if tmt_idx is None:
++            return pred.new_zeros(())
++        mask = truth_flat == tmt_idx
++        if not bool(mask.any()):
++            return pred.new_zeros(())
++        diff = pred[mask, tmt_idx] - pred[mask, self.stop_token]
++        return _TMT_LAMBDA * torch.relu(_TMT_MARGIN - diff).mean()
++
+     def training_step(
+         self,
+         batch: Dict[str, torch.Tensor],
+@@ -823,7 +1068,9 @@
+         """
+         pred, truth = self._forward_step(batch)
+         pred = pred[:, :-1, :].reshape(-1, self.vocab_size)
+-        loss = self.celoss(pred, truth.flatten())
++        truth_flat = truth.flatten()
++        loss = self.celoss(pred, truth_flat)
++        loss = loss + self._nterm_tmt_margin_loss(pred, truth_flat)
+         self.log(
+             "train_CELoss",
+             loss.detach(),

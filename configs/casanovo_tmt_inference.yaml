@@ -1,0 +1,97 @@
+min_peptide_len: 6
+max_peptide_len: 100
+predict_batch_size: 1024
+top_match: 1
+accelerator: gpu
+devices: null
+n_beams: 10
+precursor_mass_tol: 50
+isotope_error_range:
+- 0
+- 1
+enzyme: trypsin
+digestion: full
+missed_cleavages: 0
+max_mods: 1
+allowed_fixed_mods: C:C[Carbamidomethyl]
+allowed_var_mods: M:M[Oxidation],N:N[Deamidated],Q:Q[Deamidated],nterm:[Acetyl]-,nterm:[Carbamyl]-,nterm:[Ammonia-loss]-,nterm:[+25.980265]-
+random_seed: 454
+n_log: 1
+tb_summarywriter: false
+log_metrics: false
+log_every_n_steps: 50
+lance_dir: null
+val_check_interval: 5000
+min_peaks: 20
+max_peaks: 150
+min_mz: 50.0
+max_mz: 2500.0
+min_intensity: 0.01
+remove_precursor_tol: 2.0
+max_charge: 4
+dim_model: 512
+n_head: 8
+dim_feedforward: 1024
+n_layers: 9
+dropout: 0.0
+dim_intensity: null
+warmup_iters: 10000
+cosine_schedule_period_iters: 600000
+learning_rate: 0.0002
+weight_decay: 1.0e-05
+train_label_smoothing: 0.01
+train_batch_size: 256
+max_epochs: 5
+shuffle: true
+shuffle_buffer_size: 10000
+num_sanity_val_steps: 0
+calculate_precision: false
+accumulate_grad_batches: 1
+gradient_clip_val: 1.0
+gradient_clip_algorithm: norm
+precision: bf16-mixed
+replace_isoleucine_with_leucine: true
+massivekb_tokenizer: false
+residues:
+  G: 57.021464
+  A: 71.037114
+  S: 87.032028
+  P: 97.052764
+  V: 99.068414
+  T: 101.04767
+  C[Carbamidomethyl]: 160.030649
+  L: 113.084064
+  I: 113.084064
+  N: 114.042927
+  D: 115.026943
+  Q: 128.058578
+  K: 128.094963
+  E: 129.042593
+  M: 131.040485
+  H: 137.058912
+  F: 147.068414
+  R: 156.101111
+  Y: 163.063329
+  W: 186.079313
+  M[Oxidation]: 147.0354
+  N[Deamidated]: 115.026943
+  Q[Deamidated]: 129.042594
+  '[Acetyl]-': 42.010565
+  '[Carbamyl]-': 43.005814
+  '[Ammonia-loss]-': -17.026549
+  '[+25.980265]-': 25.980265
+  S[Phospho]: 166.998359
+  T[Phospho]: 181.014001
+  Y[Phospho]: 243.02966
+  K[TMTpro]: 432.302109
+  '[TMTpro]-': 304.207146
+  R[Phospho]: 236.067442
+  K[Phospho]: 208.061294
+new_token_init:
+  S[Phospho]: S
+  T[Phospho]: T
+  Y[Phospho]: Y
+  K[TMTpro]: K
+  '[TMTpro]-': '[Acetyl]-'
+  R[Phospho]: R
+  K[Phospho]: K
