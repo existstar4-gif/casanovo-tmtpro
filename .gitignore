@@ -1,6 +1,6 @@
-data/
-out/
-models/
+/data/
+/out/
+/models/
 *.ckpt
 *.mzML
 *.mzml
