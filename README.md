@@ -1,6 +1,6 @@
 # Casanovo-TMT
 
-Code accompanying *De novo sequencing of TMTpro-labeled peptides* (Kim, H. B. and Kim, K.-e.).
+Code accompanying *Casanovo-TMT: deep learning-based de novo sequencing of TMTpro-labeled peptides and phosphopeptides* (Kim, H. B. and Kim, K.-e.).
 
 Casanovo-TMT is [Casanovo](https://github.com/Noble-Lab/casanovo) 5.2.0 fine-tuned on TMTpro-labeled
 spectra, with the residue vocabulary extended by the TMTpro tags and phosphorylation, and with
@@ -89,4 +89,4 @@ changes are given as diffs in `casanovo_patch/`.
 
 ## Citation
 
-Kim, H. B. and Kim, K.-e. De novo sequencing of TMTpro-labeled peptides. *bioRxiv* (2026).
+Kim, H. B. and Kim, K.-e. Casanovo-TMT: deep learning-based de novo sequencing of TMTpro-labeled peptides and phosphopeptides. *bioRxiv* (2026).
