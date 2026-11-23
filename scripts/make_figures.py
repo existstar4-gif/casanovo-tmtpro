@@ -149,11 +149,20 @@ def scale_text(fig, k):
         _t.set_fontsize(_t.get_fontsize() * k)
 
 
+# 인쇄 폭 (inch) — Word 페이지 폭 6.5 in 에 넣을 때 글자가 7 pt 이상이 되도록 (2026-11-18, C26)
+PRINT_W = {"fig1_capability": 6.5, "fig3_scope": 6.5, "fig3_g": 2.6, "fig7_phospho_compare": 6.5,
+           "fig8_ours_only_validation": 6.5}
+
+
 def save(fig, name):
-    for ext in ("png", "pdf"):
-        fig.savefig(os.path.join(OUT, f"{name}.{ext}"))
+    if name in PRINT_W:
+        import print_fit
+        print_fit.save(fig, OUT, name, PRINT_W[name])
+    else:
+        for ext in ("png", "pdf"):
+            fig.savefig(os.path.join(OUT, f"{name}.{ext}"))
+        print(f"  {name}.png / .pdf")
     plt.close(fig)
-    print(f"  {name}.png / .pdf")
 
 
 # ── F1 ───────────────────────────────────────────────────────────────────
@@ -195,13 +204,14 @@ def fig1():
                            rotation_mode="anchor")
 
     # 2026-11-11: 패널 f(예측 비율)를 사용자 결정으로 뺐다. 윗줄 a-c, 아랫줄 d-e 를 가운데 정렬.
-    fig = plt.figure(figsize=(13.6, 7.4))
+    # 2026-11-18 (C26): 인쇄 크기(6.5 in 폭) 그대로 그린다 — 3 줄 × 2 칸. 글자는 인쇄에서 6.5–9 pt.
+    fig = plt.figure(figsize=(6.6, 8.1))
     # 2026-11-11: A 정밀도(re-ranking 끔) / B re-ranking 효과(옛 Fig. 3F) / C 운용점 /
     #             D 보정 / E 아미노산(re-ranking 끔) / F 길이
-    gs = fig.add_gridspec(2, 3, wspace=0.30, hspace=0.62)
+    gs = fig.add_gridspec(3, 2, wspace=0.42, hspace=0.80)
     axR = fig.add_subplot(gs[0, 1])
-    axes = ((fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 2]), fig.add_subplot(gs[1, 0])),
-            (fig.add_subplot(gs[1, 1]), fig.add_subplot(gs[1, 2]), fig.add_axes([0, 0, 0.01, 0.01])))
+    axes = ((fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[1, 0]), fig.add_subplot(gs[1, 1])),
+            (fig.add_subplot(gs[2, 0]), fig.add_subplot(gs[2, 1]), fig.add_axes([0, 0, 0.01, 0.01])))
     # 2026-11-11: 패널 순서 a 정밀도, b 운용점, c 보정, d 아미노산, e 길이, f 예측 비율.
     # 변수 이름은 옛 판본(a-f) 그대로 두고 놓이는 자리만 바꾼다.
     (ax1, ax4, ax6), (ax2, ax5, ax3) = axes
@@ -226,12 +236,12 @@ def fig1():
         ax1.bar([i + off for i in x], v, w, color=c, label=nm,
                 yerr=[lo, hi], error_kw=dict(ecolor=C_GREY, elinewidth=0.9, capsize=2.5))
         for i, k in enumerate(KEYS):
-            ax1.text(i + off, CI[k][cls][1] + (5.4 if cls == "tmt" else 1.4), f"{v[i]:.1f}",
+            ax1.text(i + off, CI[k][cls][1] + (5.4 if cls == "tmt" else 3.0), f"{v[i]:.1f}",
                      ha="center", fontsize=7, weight="bold" if (i == 3 and cls == "tmt") else "normal")
     xlab(ax1, SHORT)
     ax1.set_ylim(0, 124); ax1.set_yticks([0, 20, 40, 60, 80, 100])
     ax1.set_ylabel("Peptidoform precision (%)")
-    ax1.text(-0.16, 1.07, "A", transform=ax1.transAxes, fontsize=13, weight="bold", va="bottom")
+    ax1.text(-0.33, 1.08, "A", transform=ax1.transAxes, fontsize=11, weight="bold", va="bottom")
     ax1.legend(loc="upper center", ncol=2, fontsize=7, frameon=False)
 
     # b — 아미노산 수준 (원저자 정의). 문헌과 비교되는 유일한 축이다.
@@ -240,16 +250,18 @@ def fig1():
     ax2.bar([i - w / 2 for i in x], aap, w, color=C_TMT, label="precision")
     ax2.bar([i + w / 2 for i in x], aar, w, color=C_TMT, alpha=.45, label="recall")
     for i in x:
-        ax2.text(i - w / 2, aap[i] + 6.4, f"{aap[i]:.1f}", ha="center", fontsize=6.6,
-                 weight="bold" if i == 3 else "normal")
-        ax2.text(i + w / 2, aar[i] + 1.4, f"{aar[i]:.1f}", ha="center", fontsize=6.6)
+        for xx, vv, bold in ((i - w / 2, aap[i], i == 3), (i + w / 2, aar[i], False)):
+            inside = vv > 85                          # 높은 막대는 안쪽에 세로 흰 글자 — 0.95 선 · 이웃 숫자와 겹치지 않게
+            ax2.text(xx, vv - 3 if inside else vv + 1.4, f"{vv:.1f}", ha="center",
+                     va="top" if inside else "bottom", fontsize=6.1, rotation=90 if inside else 0,
+                     color="white" if inside else "black", weight="bold" if bold else "normal")
     ax2.axhline(95, color=C_FP, ls=":", lw=1.1)
-    ax2.text(-0.42, 89.5, "0.95  Casanovo, within distribution", fontsize=6.4,
-             color=C_FP, ha="left", va="top")
+    ax2.text(-0.42, 96.5, "0.95  Casanovo, within distribution", fontsize=6.5,
+             color=C_FP, ha="left", va="bottom")
     xlab(ax2, SHORT)
     ax2.set_ylim(0, 124); ax2.set_yticks([0, 20, 40, 60, 80, 100])
     ax2.set_ylabel("Amino acid level, TMT (%)")
-    ax2.text(-0.16, 1.07, "E", transform=ax2.transAxes, fontsize=13, weight="bold", va="bottom")
+    ax2.text(-0.33, 1.08, "E", transform=ax2.transAxes, fontsize=11, weight="bold", va="bottom")
     ax2.legend(loc="upper center", ncol=2, fontsize=7, frameon=False)
 
     # c — 커버리지. 미학습 붕괴는 정밀도로는 보이지 않는다.
@@ -263,7 +275,7 @@ def fig1():
     xlab(ax3, SHORT)
     ax3.set_ylim(0, 132); ax3.set_yticks([0, 20, 40, 60, 80, 100])
     ax3.set_ylabel("Spectra given a peptide (%)")
-    ax3.text(-0.16, 1.07, "F", transform=ax3.transAxes, fontsize=13, weight="bold", va="bottom")
+    ax3.text(-0.33, 1.08, "F", transform=ax3.transAxes, fontsize=11, weight="bold", va="bottom")
     ax3.legend(loc="upper center", ncol=2, fontsize=7, frameon=False)
 
     # B — re-ranking 효과 (옛 Fig. 3F, make_rerank_fig 와 같은 산출물)
@@ -277,13 +289,13 @@ def fig1():
         xs_ = [i + (j - 1) * wr for i in range(2)]
         axR.bar(xs_, vals, wr, color=c, label=nm)
         for x_, v in zip(xs_, vals):
-            axR.text(x_, v + 1.6, f"{v:.1f}", ha="center", fontsize=6.4)
+            axR.text(x_, v + 1.6, f"{v:.1f}", ha="center", fontsize=6.3)
     axR.set_xticks(range(2))
     axR.set_xticklabels(["TMT", "label-free"], fontsize=8)
-    axR.set_ylim(0, 140); axR.set_yticks([0, 20, 40, 60, 80, 100])
+    axR.set_ylim(0, 158); axR.set_yticks([0, 20, 40, 60, 80, 100])
     axR.set_ylabel("Peptidoform precision (%)")
     axR.legend(loc="upper left", fontsize=7, frameon=False)
-    axR.text(-0.16, 1.07, "B", transform=axR.transAxes, fontsize=13, weight="bold", va="bottom")
+    axR.text(-0.33, 1.08, "B", transform=axR.transAxes, fontsize=11, weight="bold", va="bottom")
 
     # ── 아랫줄: 최종 모델의 성질 ────────────────────────────────────────
     rec = score_dev(f"{E}/final_knap.mztab")
@@ -301,12 +313,11 @@ def fig1():
                          fontsize=8.5, color=c, weight="bold", ha="right",
                          arrowprops=dict(arrowstyle="->", color=c, lw=0.8))
     # 2026-11-11: FDR 1% 지점은 사용자 결정으로 Fig. 2 에서 뺐다(인산화 절에서 다룬다).
-    ax4.axhline(95, color=C_GREY, ls=":", lw=1)
-    ax4.text(99, 91.0, "95% precision", fontsize=7, color=C_GREY, ha="right")
+    ax4.axhline(95, color=C_GREY, ls=":", lw=1, label="95% precision")   # 글자 대신 범례로 — 곡선과 겹치지 않게
     ax4.set_xlim(0, 102); ax4.set_ylim(40, 103)
     ax4.set_xlabel("Coverage (%)")
     ax4.set_ylabel("Peptidoform precision (%)")
-    ax4.text(-0.16, 1.07, "C", transform=ax4.transAxes, fontsize=13, weight="bold", va="bottom")
+    ax4.text(-0.33, 1.08, "C", transform=ax4.transAxes, fontsize=11, weight="bold", va="bottom")
     ax4.legend(loc="lower left", fontsize=7.5)
 
     # e — 길이별. NovoBench 가 기존 논문에 없다고 지적한 강건성 축이다.
@@ -323,15 +334,17 @@ def fig1():
         ax5.plot(xs, ys, marker="o", color=c, lw=1.9, ms=5, label=nm)
         if cls == "tmt":
             for j, y_, n_ in zip(xs, ys, ns):
-                ax5.text(j, y_ + 3.4, f"{y_:.0f}", ha="center", fontsize=7, color=c)
-                ax5.text(j, 3, f"n={n_}", ha="center", fontsize=6, color=C_GREY)
-    ax5.set_xticks(range(len(BINS)))
+                down = j + 1 < len(ys) and ys[j + 1] < y_ - 20 or j == len(ys) - 1 and len(ys) > 1 and y_ < ys[j - 1] - 20
+                ax5.text(j + (0.18 if j == len(ys) - 1 else 0), y_ + (-10 if j == len(ys) - 1 and down else 5.0),
+                         f"{y_:.0f}", ha="center", fontsize=7, color=c)
+                ax5.text(j, 3, f"n={n_}", ha="center", fontsize=6.5, color=C_GREY)
+    ax5.set_xticks(range(len(BINS))); ax5.set_xlim(-0.6, len(BINS) - 0.4)
     ax5.set_xticklabels([b[0] for b in BINS], fontsize=7.5)
-    ax5.set_ylim(0, 108); ax5.set_yticks([0, 20, 40, 60, 80, 100])
+    ax5.set_ylim(0, 115); ax5.set_yticks([0, 20, 40, 60, 80, 100])
     ax5.set_xlabel("Reference peptide length (residues)")
     ax5.set_ylabel("Peptidoform precision (%)")
-    ax5.text(-0.16, 1.07, "F", transform=ax5.transAxes, fontsize=13, weight="bold", va="bottom")
-    ax5.legend(loc="lower left", fontsize=7.5)
+    ax5.text(-0.33, 1.08, "F", transform=ax5.transAxes, fontsize=11, weight="bold", va="bottom")
+    ax5.legend(loc="upper right", fontsize=7.5)
 
     # f — 보정. 점수가 순위로 쓸 만한지, 확률로 읽어도 되는지는 다른 문제다.
     for cls, c, nm in (("tmt", C_TMT, "TMT"), ("naked", C_LF, "label-free")):
@@ -348,11 +361,11 @@ def fig1():
             py.append(100 * sum(o for _, o in ch) / len(ch))
         ax6.plot(px, py, marker="o", color=c, lw=1.9, ms=5, label=nm)
     ax6.plot([0, 100], [0, 100], ls="--", color=C_GREY, lw=1)
-    ax6.text(63, 55, "perfect calibration", fontsize=6.6, color=C_GREY, rotation=38)
+    ax6.text(62, 46, "perfect calibration", fontsize=6.6, color=C_GREY, rotation=33)
     ax6.set_xlim(0, 102); ax6.set_ylim(0, 105)
     ax6.set_xlabel("Score the model emits (%)")
     ax6.set_ylabel("Observed precision (%)")
-    ax6.text(-0.16, 1.07, "D", transform=ax6.transAxes, fontsize=13, weight="bold", va="bottom")
+    ax6.text(-0.33, 1.08, "D", transform=ax6.transAxes, fontsize=11, weight="bold", va="bottom")
     ax6.legend(loc="upper left", fontsize=7.5)
 
     fig.delaxes(ax3)   # 패널 f 는 그리지 않는다(위 주석)
@@ -594,9 +607,11 @@ def fig3():
 
     # 2026-11-11: 패널 b(외부 데이터 운용점) 신설. 본문 인용 순서에 맞춰 a, b(운용점),
     # c(변형), d(밀도), e(인산화) 순으로 놓는다. 변수 이름은 옛 판본 그대로.
-    fig, (ax1, ax5, ax2, ax4, ax3) = plt.subplots(
-        1, 5, figsize=(20.0, 4.6), gridspec_kw={"width_ratios": [2.0, 1.25, 1, 1.15, 1.05]})
-    fig.subplots_adjust(wspace=0.42)
+    # 2026-11-18 (C26): 인쇄 크기(6.5 in)로 2 줄 — 윗줄 A·B, 아랫줄 C·D·E
+    fig = plt.figure(figsize=(6.6, 5.1))
+    gs = fig.add_gridspec(2, 6, wspace=1.6, hspace=0.75, height_ratios=[1, 1])
+    ax1 = fig.add_subplot(gs[0, 0:4]); ax5 = fig.add_subplot(gs[0, 4:6])
+    ax2 = fig.add_subplot(gs[1, 0:2]); ax4 = fig.add_subplot(gs[1, 2:4]); ax3 = fig.add_subplot(gs[1, 4:6])
     # 2026-08-31: 펩타이드 클러스터 부트스트랩 CI 를 오차막대로. 캐시가 없으면 막대만 그린다
     # (생성: python scripts/cluster_ci.py --ext).
     import json
@@ -616,27 +631,27 @@ def fig3():
         # 2026-11-12: 79.5 가 84.7 점선과 겹쳤다 — 흰 바탕을 깔아 점선 위에 올린다.
         ax1.text(i, top + 1.8, r1(r[2]), ha="center", fontsize=8, weight="bold", zorder=5,
                  bbox=dict(facecolor="white", edgecolor="none", pad=0.6))
-        ax1.text(i, 4, f"n={r[3]:,}", ha="center", fontsize=6.0, color="white",
+        ax1.text(i, 4, f"n={r[3]:,}", ha="center", fontsize=6.3, color="white",
                  rotation=90, va="bottom")
     ax1.axhline(84.7, color=C_GREY, ls="--", lw=1.2)
     ax1.text(2.0, 91.5, "test set 84.7", ha="center",
              fontsize=7, color=C_GREY)
     ax1.set_xticks(list(xs))
-    ax1.set_xticklabels([r[0] + NL + r[1] for r in rows], fontsize=4.8,
-                        rotation=24, ha="right")
+    ax1.set_xticklabels([r[0] + NL + r[1] for r in rows], fontsize=6.5)
     ax1.set_ylim(0, 100)
     ax1.set_ylabel("Peptidoform precision (%)")
-    ax1.text(-0.14, 1.06, "A", transform=ax1.transAxes, fontsize=13, weight="bold", va="bottom")
+    ax1.text(-0.12, 1.06, "A", transform=ax1.transAxes, fontsize=11, weight="bold", va="bottom")
 
     ax2.bar(range(len(ctl)), [c[1] for c in ctl], 0.55, color=[C_TMT, C_GREEN, C_FP])
     for i, (lab, v) in enumerate(ctl):
         ax2.text(i, v + 1.6, r1(v), ha="center", fontsize=8, weight="bold")
     # 2026-11-11: 차이(pp) 표기는 뺐다 — 사용자 지시.
     ax2.set_xticks(range(len(ctl)))
-    ax2.set_xticklabels([c[0] for c in ctl], fontsize=5.6, rotation=25, ha="right",
+    ax2.set_xticklabels([c[0] for c in ctl], fontsize=6.5, rotation=30, ha="right",
                         rotation_mode="anchor")
     ax2.set_ylim(0, 100)
-    ax2.text(-0.14, 1.06, "C", transform=ax2.transAxes, fontsize=13, weight="bold", va="bottom")
+    ax2.set_ylabel("Peptidoform precision (%)")
+    ax2.text(-0.30, 1.06, "C", transform=ax2.transAxes, fontsize=11, weight="bold", va="bottom")
 
     if ph:
         xp = range(len(ph))
@@ -654,18 +669,19 @@ def fig3():
             # 214/4000 = 5.35 처럼 끝이 5 이면 f"{:.1f}" 는 5.3 을 낸다 — 본문(5.4%)과 맞게 사사오입한다.
             _r = lambda k, m: f"{(1000 * k + m // 2) // m / 10:.1f}"
             _n = r[1]["n"]; _ex = r[1]["exact"]; _ph = r[1]["ph"]
-            ax3.text(i, exact[i] + site[i] / 2, _r(_ph - r[1]["site"], _n), ha="center", va="center",
-                     fontsize=6.5, weight="bold", color="white")
+            # 얇은 띠 안에 글자가 넘쳐 막대 오른쪽 바깥에 적는다 (2026-11-18)
+            ax3.text(i + 0.28, exact[i] + site[i] / 2, _r(_ph - r[1]["site"], _n), ha="left", va="center",
+                     fontsize=6.5, weight="bold", color=C_LF)
             ax3.text(i, exact[i] + site[i] + rest[i] / 2, _r(_n - _ex - (_ph - r[1]["site"]), _n), ha="center", va="center",
                      fontsize=8, weight="bold", color="#333333")
-        ax3.set_xticks(list(xp))
-        ax3.set_xticklabels([r[0] for r in ph], fontsize=8)
+        ax3.set_xticks(list(xp)); ax3.set_xlim(-0.55, len(ph) - 0.45 + 0.35)
+        ax3.set_xticklabels([r[0] for r in ph], fontsize=7)
         ax3.set_ylim(0, 152)
         # 여백은 범례와 site 라벨용이다. 눈금은 100 에서 끊는다.
         ax3.set_yticks([0, 20, 40, 60, 80, 100])
         ax3.set_ylabel("Share of spectra (%)")
-        ax3.text(-0.14, 1.06, "E", transform=ax3.transAxes, fontsize=13, weight="bold", va="bottom")
-        ax3.legend(loc="upper center", ncol=1, fontsize=5.0, frameon=False,
+        ax3.text(-0.30, 1.06, "E", transform=ax3.transAxes, fontsize=11, weight="bold", va="bottom")
+        ax3.legend(loc="upper center", ncol=1, fontsize=6.3, frameon=False,
                    bbox_to_anchor=(0.5, 1.005), columnspacing=1.0, handlelength=1.2)
         # 2026-11-12: 막대 위 site 91% 와 별표 주석은 뺐다 — 분모(2,368)가 막대(4,000)와 달라 헷갈린다. 본문에만 둔다(사용자 지시).
 
@@ -674,16 +690,17 @@ def fig3():
     for x, y, acc, col in pts:
         ax4.scatter([x], [y], s=54, color=col, zorder=3)
         # 회귀선·축 눈금과 겹치지 않도록 점마다 라벨 위치를 정한다
-        off, ha = {"PXD054085": ((0, 8), "center"), "PXD065357": ((4, -13), "left"),
-                   "PXD072211": ((0, -13), "center"), "PXD063976": ((0, -13), "right")
+        off, ha = {"PXD054085": ((5, 6), "left"), "PXD065357": ((0, 8), "center"),
+                   "PXD072211": ((-4, -13), "right"), "PXD063976": ((0, -13), "right")
                    }.get(acc, ((0, 8), "center"))
         ax4.annotate(acc, (x, y), textcoords="offset points", xytext=off,
                      ha=ha, fontsize=6.6, color=C_GREY)
     # 2026-11-12: 기울기 선·표기는 뺐다 — 점 4개로 낸 기울기라 본문에서도 뺐다(사용자 지시).
-    ax4.set_xlabel("Median peak count of evaluated spectra", fontsize=7.5)
+    ax4.set_xlabel("Median peaks per spectrum", fontsize=7.5)
+    ax4.set_xlim(40, 280)
     ax4.set_ylabel("Peptidoform precision (%)")
     ax4.set_ylim(0, 100)
-    ax4.text(-0.14, 1.06, "D", transform=ax4.transAxes, fontsize=13, weight="bold", va="bottom")
+    ax4.text(-0.30, 1.06, "D", transform=ax4.transAxes, fontsize=11, weight="bold", va="bottom")
 
     # b — 외부 데이터 precision-coverage. 원 표시는 정밀도 95% 이상이 유지되는 최대 coverage.
     for acc, lab, col in EXTSETS:
@@ -701,13 +718,12 @@ def fig3():
     ax5.set_xlim(0, 102); ax5.set_ylim(40, 103)
     ax5.set_xlabel("Coverage (%)")
     ax5.set_ylabel("Peptidoform precision (%)")
-    ax5.text(-0.14, 1.06, "B", transform=ax5.transAxes, fontsize=13, weight="bold", va="bottom")
-    ax5.legend(loc="lower left", fontsize=6.4)
+    ax5.text(-0.30, 1.06, "B", transform=ax5.transAxes, fontsize=11, weight="bold", va="bottom")
+    ax5.legend(loc="lower left", fontsize=6.3)
 
     suptitle(fig, "Figure 3 — Performance transfers across laboratories; the ranking "
                  "among deposits is not explained by spectral sparsity",
                  y=1.04, fontsize=10.5, weight="bold")
-    scale_text(fig, FIG3_TEXT)
     save(fig, "fig3_scope")
     for x, y, acc, _ in pts:
         print(f"    {acc:<12} 피크중앙 {x:>5.0f}   정밀도 {y:5.1f}%")
@@ -773,8 +789,8 @@ def fig4():
            ("PXD063976", 74.4, 69.1)]
 
     # 2026-11-12: Fig. 3 은 G 까지만. H·I(구제율)는 맨 끝 Fig. 6 으로 뺐다(사용자 결정, 이후 확장 예정).
-    fig, ax1 = plt.subplots(1, 1, figsize=(4.2, 4.6))
-    fig.subplots_adjust(bottom=0.26)
+    fig, ax1 = plt.subplots(1, 1, figsize=(2.6, 2.8))   # 2026-11-18 (C26): 인쇄 크기
+    fig.subplots_adjust(bottom=0.30, left=0.24)
 
     x = range(len(LBL))
     w = 0.36
@@ -783,18 +799,17 @@ def fig4():
     ax1.bar([i + w / 2 for i in x], [r[2] for r in LBL], w, color=C_TMT,
             label="FragPipe labels")
     for i, r in enumerate(LBL):
-        ax1.text(i - w / 2, r[1] + 1.6, f"{r[1]:.1f}", ha="center", fontsize=5.0)
-        ax1.text(i + w / 2, r[2] + 1.6, f"{r[2]:.1f}", ha="center", fontsize=5.0)
+        ax1.text(i - w / 2, r[1] + 1.6, f"{r[1]:.1f}", ha="center", fontsize=6.0, rotation=90, va="bottom")
+        ax1.text(i + w / 2, r[2] + 1.6, f"{r[2]:.1f}", ha="center", fontsize=6.0, rotation=90, va="bottom")
     ax1.set_xticks(list(x))
     ax1.set_xticklabels([r[0] for r in LBL], fontsize=6.4, rotation=28, ha="right",
                         rotation_mode="anchor")
     ax1.set_ylim(0, 150)   # 여백은 범례용, 눈금은 100 에서 끊는다 (F 와 같게)
     ax1.set_yticks([0, 20, 40, 60, 80, 100])
     ax1.set_ylabel("Peptidoform precision (%)")
-    ax1.text(-0.14, 1.06, "G", transform=ax1.transAxes, fontsize=13, weight="bold", va="bottom")
-    ax1.legend(loc="upper left", ncol=1, fontsize=5.6, frameon=False)
+    ax1.text(-0.30, 1.04, "G", transform=ax1.transAxes, fontsize=11, weight="bold", va="bottom")
+    ax1.legend(loc="upper left", ncol=1, fontsize=6.5, frameon=False)
 
-    scale_text(fig, FIG3_TEXT)   # Fig. 3 윗줄과 같은 배율
     save(fig, "fig3_g")
 
     # 2026-11-12: Fig. 5 (fig8_ours_only_validation, 소문자 제목 형식) 아래 줄 e·f 로 붙인다.
@@ -821,7 +836,7 @@ def fig4():
     ax2.set_ylim(0, 28)   # 여백은 범례용
     ax2.set_yticks([0, 5, 10, 15, 20])
     ax2.set_ylabel("Net recovery (%)")
-    ax2.text(-0.2, 1.04, "E", transform=ax2.transAxes, fontsize=13, weight="bold", va="bottom")   # 2026-11-13: 제목은 범례로
+    ax2.text(-0.2, 1.04, "E", transform=ax2.transAxes, fontsize=11, weight="bold", va="bottom")   # 2026-11-13: 제목은 범례로
     ax2.legend(loc="upper left", fontsize=7.5, frameon=False)
     # 2026-08-30: "nearly constant" 는 과장이다. 보정 계열에 같은 동질성 검정을 하면
     # 세 값이 갈린다(p=0.010). 정확한 진술은 '총계보다 덜 변한다'(1.2배 대 2.1배)다.
@@ -850,7 +865,7 @@ def fig4():
     ax3.set_ylim(0, 100)   # 여백은 범례용 (2026-11-13: 글자 1.6 배)
     ax3.set_yticks([0, 10, 20, 30, 40, 50, 60])
     ax3.set_ylabel("Net recovery (%)")
-    ax3.text(-0.2, 1.04, "F", transform=ax3.transAxes, fontsize=13, weight="bold", va="bottom")
+    ax3.text(-0.2, 1.04, "F", transform=ax3.transAxes, fontsize=11, weight="bold", va="bottom")
     ax3.legend(loc="upper left", fontsize=7.5, frameon=False)
 
     scale_text(fig, FIG3_TEXT)   # 2026-11-13: Fig. 3 과 같은 글자 배율

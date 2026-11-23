@@ -53,10 +53,10 @@ def scale_text(fig, k):
 
 
 def save(fig, name):
-    for ext in ("png", "pdf"):
-        fig.savefig(os.path.join(OUT, f"{name}.{ext}"))
+    # 인쇄 폭 6.5 in 에서 글자 7 pt 이상 (2026-11-18, C26)
+    import print_fit
+    print_fit.save(fig, OUT, name, 6.5)
     plt.close(fig)
-    print(f"  {name}.png / .pdf")
 
 
 def num(s):
@@ -108,12 +108,12 @@ def fig7():
         ident[tag] = split_counts(tag); ident[tag]["FragPipe"] = f["A_default"]["phospho"]
         quant[tag] = quant_counts(tag); quant[tag]["FragPipe"] = f["A_default"]["quantifiable"]
     # 2026-11-13: 글자를 Fig. 3 과 같은 1.6 배로 키우려고 2x2 배치
-    fig, axs = plt.subplots(2, 2, figsize=(11, 8.6)); axs = axs.ravel()
-    fig.subplots_adjust(hspace=0.45, wspace=0.45)
+    # 2026-11-18 (C26): 인쇄 크기(6.5 in)로 그린다 — 1.6 배 키우기 대신
+    fig, axs = plt.subplots(2, 2, figsize=(6.8, 7.0)); axs = axs.ravel()
     bars(axs[0], ident, "Phosphopeptides identified")
     panel(axs[0], "A")
-    axs[0].set_ylim(0, 21000)   # 2026-11-12: 범례가 Study 3 막대와 겹쳐 위 여백을 늘렸다
-    axs[0].legend(ncol=2, loc="upper left")
+    axs[0].set_ylim(0, 24000)   # 2026-11-12: 범례가 Study 3 막대와 겹쳐 위 여백을 늘렸다
+    axs[0].legend(ncol=2, loc="upper left", fontsize=6.5, handlelength=1.2, columnspacing=0.8)
     bars(axs[1], quant, "Quantifiable phosphopeptides")
     panel(axs[1], "B")
     # c (2026-11-12 신설, 사용자 요청): 네 방법의 겹침. Fig. 4A 와 같은 규칙의 집합
@@ -164,8 +164,7 @@ def fig7():
     ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), frameon=False)
     ax.text(1.04, 0.70, f"Spearman ρ = {h['rho']:.2f}" + chr(10) + f"n = {len(h['studies'])}", transform=ax.transAxes,
             fontsize=7.5, va="top")
-    fig.tight_layout()
-    scale_text(fig, 1.6)
+    fig.tight_layout(h_pad=2.2, w_pad=1.6)
     save(fig, "fig7_phospho_compare")
 
 
@@ -173,7 +172,7 @@ def fig8(fig=None, axs=None):
     """axs 를 주면 그 네 축에 A–D 만 그린다(Fig. 5 3열 합본, make_figures.fig4 에서 부른다; 2026-11-13)."""
     own = fig is None
     if own:
-        fig, axs = plt.subplots(2, 2, figsize=(12, 9.6)); axs = axs.ravel()   # 2026-11-13: 2x2, 글자 1.6 배
+        fig, axs = plt.subplots(2, 2, figsize=(6.8, 6.4)); axs = axs.ravel()   # 2026-11-18 (C26): 인쇄 크기
         fig.subplots_adjust(hspace=0.5, wspace=0.5)
     # a entrapment: 애기장대(결합 추정) 와 맞바꾸기(짝 추정)
     ax = axs[0]
@@ -203,7 +202,7 @@ def fig8(fig=None, axs=None):
         ax.bar(x + (j - 1) * w, v, w * 0.92, color=C_TMT, alpha=[0.45, 0.7, 1.0][j], edgecolor="white", lw=0.4)
         for xi, vi, ni in zip(x + (j - 1) * w, v, n):
             if ni:
-                ax.text(xi, 2, str(ni), ha="center", va="bottom", fontsize=5.5, rotation=90, color="white")
+                ax.text(xi, 2, str(ni), ha="center", va="bottom", fontsize=6.3, rotation=90, color="white")
     ax.set_ylim(0, 105)
     ax.set_xticks(x); ax.set_xticklabels([c for _, c in cats], fontsize=7)
     ax.set_ylabel("Same sequence as Sage (%)")
@@ -242,8 +241,7 @@ def fig8(fig=None, axs=None):
         axs[0].legend(handles=hs, loc="upper left", fontsize=7.5)
         return
     fig.legend(handles=hs, loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.06), title="shading: study", fontsize=7.5)
-    fig.tight_layout()
-    scale_text(fig, 1.6)
+    fig.tight_layout(h_pad=2.2, w_pad=1.6)
     save(fig, "fig8_ours_only_validation")
 
 

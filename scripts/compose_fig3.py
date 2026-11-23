@@ -16,23 +16,30 @@ bot_f = Image.open(os.path.join(F, "fig2b_rerank.png")).convert("RGB")
 # 2026-11-12: 옛 Fig. 4 (A-C) 를 Fig. 3 G-I 로 합쳤다 — 아랫줄 F 옆에 붙인다(크기 그대로).
 # 2026-11-12: H·I 는 Fig. 6 으로 뺐다 — 이제 G 하나만 붙인다.
 ghi = Image.open(os.path.join(F, "fig3_g.png")).convert("RGB")
+# 2026-11-18 (C26): 세 조각은 인쇄 폭(윗줄 6.5 in, F 3.9 in, G 2.6 in)에 맞춰 600 dpi 로 저장돼 있다.
+# 반올림으로 생긴 몇 픽셀 차이만 맞춘다 — 글자 크기는 바뀌지 않는다.
+DPI = 600
+def to_w(im, inch):
+    w = round(inch * DPI)
+    return im if im.width == w else im.resize((w, round(im.height * w / im.width)), Image.LANCZOS)
+top = to_w(top, 6.5); bot_f = to_w(bot_f, 3.9); ghi = to_w(ghi, 2.6)
 bot = Image.new("RGB", (bot_f.width + ghi.width, max(bot_f.height, ghi.height)), "white")
 bot.paste(bot_f, (0, 0))
 bot.paste(ghi, (bot_f.width, 0))
-gap = 60
+gap = 120
 w = max(top.width, bot.width)
 out = Image.new("RGB", (w, top.height + gap + bot.height), "white")
 out.paste(top, (0, 0))
 out.paste(bot, (0, top.height + gap))
 for p in (os.path.join(F, "fig3_merged.png"), os.path.join(F, "manuscript_v3", "Figure3.png")):
-    out.save(p, dpi=(300, 300))
+    out.save(p, dpi=(DPI, DPI))
 # PIL 의 PDF 저장은 이 환경에 JPEG 인코더가 없어 실패한다 — matplotlib 로 같은 픽셀을 싣는다.
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-fig = plt.figure(figsize=(out.width / 300, out.height / 300), dpi=300)
+fig = plt.figure(figsize=(out.width / DPI, out.height / DPI), dpi=DPI)
 fig.figimage(np.asarray(out), 0, 0)
-fig.savefig(os.path.join(F, "manuscript_v3", "Figure3.pdf"), dpi=300)
+fig.savefig(os.path.join(F, "manuscript_v3", "Figure3.pdf"), dpi=DPI)
 plt.close(fig)
 print("Figure3.png / .pdf", out.size)

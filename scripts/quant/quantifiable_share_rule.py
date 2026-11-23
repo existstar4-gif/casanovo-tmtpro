@@ -39,6 +39,8 @@ from count_matched_fdr import pp, normalize    # noqa: E402
 import chimeric_case_study as cs               # noqa: E402  (pd_form, our_form, mass_of, rp)
 
 MZDIR = Path(r"data/mzml_tmt")
+FILEID_MAP: dict = {}  # --fileid-map: InputFiles.txt 가 없는 export 용 (infer_pd_fileid.py)
+ALL_PEPTIDES = False   # --all-peptides: global proteome 용, 인산화 거름을 끈다 (2026-11-17)
 
 
 def labelled(seq, mods):
@@ -47,14 +49,14 @@ def labelled(seq, mods):
 
 def read_pd(path):
     """PD PSMs -> [dict(stem, scan, bare, mz, z, lab)] — Confidence High · 인산화만"""
-    fid = pp.load_inputfiles_map(path)
+    fid = pp.load_inputfiles_map(path) or FILEID_MAP
     out = []
     with io.open(path, encoding="utf-8", errors="replace") as fh:
         hdr = [pp.clean_field(c) for c in fh.readline().rstrip("\n").split("\t")]
         ix = {n: i for i, n in enumerate(hdr)}
         for line in fh:
             c = [pp.clean_field(x) for x in line.rstrip("\n").split("\t")]
-            if c[ix["Confidence"]] != "High" or "Phospho" not in c[ix["Modifications"]]:
+            if c[ix["Confidence"]] != "High" or (not ALL_PEPTIDES and "Phospho" not in c[ix["Modifications"]]):
                 continue
             seq, mods = cs.pd_form(c[ix["Annotated Sequence"]], c[ix["Modifications"]])
             z = int(c[ix["Charge"]]); mh = float(c[ix["Theo. MH+ [Da]"]])
@@ -74,7 +76,7 @@ def read_ours(paths, cut):
             c = line.rstrip("\n").split("\t")
             if c[:2] == ["stem", "scan"]:
                 seen = True; continue
-            if not seen or "Phospho" not in c[2]:
+            if not seen or (not ALL_PEPTIDES and "Phospho" not in c[2]):
                 continue
             try:
                 sc = float(c[4]); z = int(c[6])
@@ -134,7 +136,14 @@ def main():
     ap.add_argument("--json")
     ap.add_argument("--pd-in-reference", action="store_true",
                     help="PD 펩타이드도 우리와 같은 참조 공간(--fasta 의 트립신 조각)에 있는 것만 센다 (2026-10-22: PD 는 TrEMBL 포함 DB 로 검색했다)")
+    ap.add_argument("--fileid-map", default=None, help="File ID -> stem JSON (InputFiles.txt 가 없을 때)")
+    ap.add_argument("--all-peptides", action="store_true",
+                    help="인산화 거름 없이 모든 펩타이드를 센다 (global proteome, 2026-11-17)")
     a = ap.parse_args()
+    global ALL_PEPTIDES, FILEID_MAP
+    ALL_PEPTIDES = a.all_peptides
+    if a.fileid_map:
+        FILEID_MAP = json.load(open(a.fileid_map, encoding="utf-8"))
 
     rep = qs.read_rep(sorted(glob.glob(os.path.join(a.study_dir, "*.rep.tsv"))))
     ours = read_ours(sorted(glob.glob(os.path.join(a.study_dir, "*_psm.tsv"))), a.cut)
@@ -181,7 +190,7 @@ def main():
         res[name] = dict(identified=len(allp), old_rule=len(old), new_rule=len(new), psm_fail_reasons=dict(why),
                          old_minus_new=len(old - new), new_only=len(new - old))
     print("=" * 90)
-    print(f"{a.label}: quantifiable phosphopeptides (bare, I=L)")
+    print(f"{a.label}: quantifiable {'peptides' if ALL_PEPTIDES else 'phosphopeptides'} (bare, I=L)")
     print(f"  old rule = scan purity >= 0.5 & channels >= {a.min_ch}  |  new rule = TMT-labelled & own share >= {a.min_share} & channels >= {a.min_ch}")
     print("%-12s %10s %10s %10s %10s" % ("method", "identified", "old rule", "new rule", "change"))
     for name, r in res.items():

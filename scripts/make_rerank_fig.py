@@ -149,16 +149,16 @@ def main():
     for i, r in enumerate(rows):
         for j in range(3):
             ax2.text(i + (j - 1) * w, r[2][j] + 1.5, f"{_q(r[2][j])}", ha="center",
-                     fontsize=4.2)
+                     fontsize=6.0, rotation=90, va="bottom")   # 세로로 — 이웃 막대 숫자와 겹치지 않게
     ax2.set_xticks(list(xs))
     ax2.set_xticklabels([r[0] + NL + r[1].split(",")[0] for r in rows],
                         fontsize=6.4, rotation=28, ha="right", rotation_mode="anchor")
-    ax2.set_ylim(0, 150)
+    ax2.set_ylim(0, 172)   # 세로 숫자가 범례에 닿지 않게 (2026-11-18)
     ax2.set_yticks([0, 20, 40, 60, 80, 100])
     ax2.set_ylabel("Peptidoform precision (%)")
     # 2026-11-11: Fig. 3 F-H 로 합쳐졌다. 제목은 범례로.
-    ax2.text(-0.14, 1.06, "F", transform=ax2.transAxes, fontsize=13, weight="bold", va="bottom")
-    ax2.legend(loc="upper left", fontsize=5.6, frameon=False)
+    ax2.text(-0.17, 1.04, "F", transform=ax2.transAxes, fontsize=11, weight="bold", va="bottom")
+    ax2.legend(loc="upper left", fontsize=6.8, frameon=False)
 
     # c — 커버리지. 세 팔이 같다는 것이 이 규칙의 성질이다.
     for j, (a, nm, c) in enumerate(ARMS):
@@ -185,10 +185,13 @@ def main():
     # 2026-11-11: test set 패널(a)과 예측 비율 패널(c)은 Fig. 2B 와 본문으로 옮겼다. 외부 데이터(b)만 Fig. 3F 로 남긴다.
     fig.delaxes(ax1)
     fig.delaxes(ax3)
-    mf.scale_text(fig, mf.FIG3_TEXT)   # Fig. 3 F-H, 윗줄과 같은 배율
-    for ext in ("png", "pdf"):
-        fig.savefig(os.path.join(BASE, "figures", "fig2b_rerank." + ext),
-                    dpi=300, bbox_inches="tight")
+    # 2026-11-18 (C26): 인쇄 크기로 — F 한 칸을 3.9 in 폭에 그린다 (G 2.6 in 와 합쳐 6.5 in)
+    fig.set_size_inches(3.9, 2.8)
+    from matplotlib.gridspec import GridSpec
+    ax2.set_subplotspec(GridSpec(1, 1, figure=fig)[0])   # 남은 한 칸이 그림 전체를 쓰게 (tight_layout 이 옛 3칸 격자를 따르지 않게)
+    fig.subplots_adjust(left=0.16, right=0.98, bottom=0.30, top=0.92)
+    import print_fit   # Fig. 3 아랫줄 F: 인쇄 폭 4.6 in (G 1.9 in 와 합쳐 6.5 in), 글자 7 pt 이상 (2026-11-18, C26)
+    print_fit.save(fig, os.path.join(BASE, "figures"), "fig2b_rerank", 3.9)
     plt.close(fig)
     print("figures/fig2b_rerank.png / .pdf")
     tot = sum(r[3] for r in rows)

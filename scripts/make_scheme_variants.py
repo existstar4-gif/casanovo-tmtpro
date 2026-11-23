@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """make_scheme_variants.py — Figure 1 배치 시안 5종 (2026-11-11).
 
-내용은 같고 배치만 다르다. 사용자 지시: 코퍼스는 "26,423,408 MS spectra / 2,146 runs" 만,
+내용은 같고 배치만 다르다. 사용자 지시: 코퍼스는 "27,075,536 MS spectra / 2,146 runs" 만,
 split-by-peptide 상자·pS/pT/pY 비율·mzTab 상자는 뺀다. 평가는 test set(test 1)만.
 그린 뒤 글자가 상자 밖으로 나가는지 렌더러로 검사해 경고한다.
 
@@ -29,8 +29,8 @@ plt.rcParams.update({"font.family": "DejaVu Sans", "savefig.dpi": 300,
 NL = chr(10)
 
 # ── 공통 내용 ───────────────────────────────────────────────────────────
-CORPUS = "26,423,408 MS spectra" + NL + "2,146 runs"
-SPLIT = (("training", "21,036,675", C_INK, "white"),
+CORPUS = "27,075,536 MS spectra" + NL + "2,146 runs"
+SPLIT = (("training", "21,688,803", C_INK, "white"),
          ("validation", "2,717,217", C_PALE, C_INK),
          ("test", "2,669,516", C_GREEN, "white"))
 TMT_RUNS = "TMTpro runs" + NL + "18,283,089 (86.9%)"
@@ -270,7 +270,7 @@ def v5():
     fig, ax = canvas(13.6, 6.0)
     label(ax, 0.0, 1.0, "A")
     ax.text(0.03, 0.995, CORPUS.replace(NL, ", "), fontsize=9, weight="bold", color=C_INK, va="top")
-    tot = 21036675 + 2717217 + 2669516
+    tot = 21688803 + 2717217 + 2669516
     x, y0, w = 0.03, 0.82, 0.40
     for lab, n, fc, tc in SPLIT:
         f = int(n.replace(",", "")) / tot * w
@@ -449,10 +449,10 @@ def modern():
     panel(X0, TOP, W0, H, "In-house corpus", INK)
     xi, wi = X0 + 0.022, W0 - 0.044
     pb = (X0, TOP, W0, H)
-    t(xi, 0.885, "26,423,408", fs=12, w="bold", box=pb)
+    t(xi, 0.885, "27,075,536", fs=12, w="bold", box=pb)
     t(xi, 0.840, "MS spectra from 2,146 runs", fs=6.2, c=SUB, box=pb)
-    tot = 21036675 + 2717217 + 2669516
-    rows = (("training", 21036675, INK), ("validation", 2717217, "#9aa5b1"), ("test", 2669516, GREEN))
+    tot = 21688803 + 2717217 + 2669516
+    rows = (("training", 21688803, INK), ("validation", 2717217, "#9aa5b1"), ("test", 2669516, GREEN))
     xx = xi
     for lab, n, c in rows:
         f = n / tot * wi
@@ -597,10 +597,10 @@ def plain():
     panel(X0, TOP, W0, H, "In-house corpus", C_GREY)
     xi, wi = X0 + 0.022, W0 - 0.044
     pb = (X0, TOP, W0, H)
-    t(xi, 0.885, "26,423,408", fs=11, w="bold", box=pb)
+    t(xi, 0.885, "27,075,536", fs=11, w="bold", box=pb)
     t(xi, 0.845, "MS spectra from 2,146 runs", fs=6.2, c=SUB, box=pb)
-    tot = 21036675 + 2717217 + 2669516
-    rows = (("training", 21036675, INK), ("validation", 2717217, "#9aa5b1"), ("test", 2669516, GREEN))
+    tot = 21688803 + 2717217 + 2669516
+    rows = (("training", 21688803, INK), ("validation", 2717217, "#9aa5b1"), ("test", 2669516, GREEN))
     xx = xi
     for lab, n, c in rows:
         f = n / tot * wi
@@ -611,7 +611,7 @@ def plain():
         ax.add_patch(Rectangle((xi, y - 0.008), 0.010, 0.016, color=c, zorder=2))
         t(xi + 0.018, y, lab, fs=6.0, box=pb)
         t(xi + wi, y, f"{n:,}", fs=6.0, ha="right", box=pb)
-    t(xi, 0.678, "Training partition", fs=6.2, w="bold", box=pb)
+    t(xi, 0.678, "Training spectra used (21,036,675)", fs=6.2, w="bold", box=pb)
     trs = (("TMTpro runs", 18283089, BLUE), ("label-free runs", 2753586, ORANGE))
     xx = xi
     for lab, n, c in trs:
@@ -770,7 +770,7 @@ def paper():
     # ── a. 코퍼스 ──
     A = (0.0, 0.43, 0.30, 0.57)
     head(0.005, 0.975, "a", "In-house corpus")
-    t(0.027, 0.912, "26,423,408 MS2 spectra", fs=6.6, w="bold", bound=A)
+    t(0.027, 0.912, "27,075,536 MS2 spectra", fs=6.6, w="bold", bound=A)
     t(0.027, 0.878, "from 2,146 runs", fs=6.0, c=SUB, bound=A)
     split = (("training", 21036675, "#33475b"), ("validation", 2717217, "#b5c0cb"),
              ("test", 2669516, GREEN))
