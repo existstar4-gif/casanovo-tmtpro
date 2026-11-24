@@ -18,7 +18,6 @@ model weights.
 | `configs/casanovo_tmt_inference.yaml` | Inference configuration (beam width 10, used for every reported result) |
 | `scripts/` | Corpus assembly, training-set interleaving, evaluation and figure scripts |
 | `scripts/quant/` | Analysis of the phosphoproteomic studies (Fig. 4 and 5) |
-| `scripts/release/` | De-identification of the released training corpus (`anonymize_training_mgf.py --mode pool`) |
 | `requirements.lock.txt` | Package versions of the environment that produced the results |
 
 ## Installation
